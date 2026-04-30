@@ -32,6 +32,11 @@ WinMain proto :DWORD,:DWORD,:DWORD,:DWORD
     strMenuTitle db "SNAKE GAME",0
     strMenuOpt1 db "Classic Mode",0
     strMenuOpt2 db "Boundaried Mode",0
+    strMenuColorLabel db "Snake Color: %s",0
+    strColorGreen db "Green",0
+    strColorBlue db "Blue",0
+    strColorPurple db "Purple",0
+    strColorOrange db "Orange",0
     strMenuBest db "Current Records:",0
     strMenuBestClassic db "Classic Best: %d",0
     strMenuBestBoundaried db "Boundaried Best: %d",0
@@ -64,6 +69,16 @@ WinMain proto :DWORD,:DWORD,:DWORD,:DWORD
     COLOR_SNAKE_BODY equ 0000CC00h ; Slightly darker green
     COLOR_SNAKE_HEAD equ 0000FF00h ; Pure Green
     COLOR_FOOD  equ 000000FFh ; Red
+    COLOR_SCORE  equ 00FFFFFFh ; White
+    COLOR_RED    equ 000000FFh ; Red (Color of food and selection)
+    COLOR_YELLOW equ 0000FFFFh ; Yellow (Special)
+    COLOR_EYE    equ 00000000h ; Black for eyes
+
+    ; Snake color presets (body/head)
+    COLOR_COUNT  equ 4
+    ColorBodyTable dd 0000CC00h, 00AA0000h, 00800080h, 0000A5FFh
+    ColorHeadTable dd 0000FF00h, 00FF0000h, 00FF00FFh, 0000C8FFh
+    ColorNameTable dd OFFSET strColorGreen, OFFSET strColorBlue, OFFSET strColorPurple, OFFSET strColorOrange
     COLOR_TEXT  equ 00FFFFFFh ; White
     COLOR_BORDER equ 00808080h ; Grey
     
@@ -73,7 +88,10 @@ WinMain proto :DWORD,:DWORD,:DWORD,:DWORD
     Score       DWORD 0
     GameMode    DWORD 0 ; 0=Wrap, 1=Wall
     GameState   DWORD 0 ; 0=Menu, 1=Playing, 2=GameOver
-    MenuSelected DWORD 0 ; 0=Opt1, 1=Opt2
+    MenuSelected DWORD 0 ; 0=Opt1, 1=Opt2, 2=Color
+    ColorIndex  DWORD 0
+    SnakeBodyColor DWORD COLOR_SNAKE_BODY
+    SnakeHeadColor DWORD COLOR_SNAKE_HEAD
     HighScoreWrap DWORD 0
     HighScoreWall DWORD 0
     
@@ -82,11 +100,6 @@ WinMain proto :DWORD,:DWORD,:DWORD,:DWORD
     NormalFoodCount DWORD 0
     FoodType        DWORD 0 ; 0=Normal, 1=Yellow
     LastMoveDirection DWORD 1 ; 0=Up, 1=Right, 2=Down, 3=Left
-    
-    COLOR_SCORE  equ 00FFFFFFh ; White
-    COLOR_RED    equ 000000FFh ; Red (Color of food and selection)
-    COLOR_YELLOW equ 0000FFFFh ; Yellow (Special)
-    COLOR_EYE    equ 00000000h ; Black for eyes
     
     FoodX       DWORD 15
     FoodY       DWORD 10
@@ -347,18 +360,59 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
     .ELSEIF uMsg == WM_KEYDOWN
         mov eax, wParam
         .IF GameState == 0 ; Menu State
-            .IF eax == VK_UP || eax == VK_LEFT
-                mov MenuSelected, 0
+            .IF eax == VK_UP
+                dec MenuSelected
+                .IF sdword ptr MenuSelected < 0
+                    mov MenuSelected, 2
+                .ENDIF
                 invoke InvalidateRect, hWnd, NULL, FALSE
-            .ELSEIF eax == VK_DOWN || eax == VK_RIGHT
-                mov MenuSelected, 1
+            .ELSEIF eax == VK_DOWN
+                inc MenuSelected
+                .IF MenuSelected > 2
+                    mov MenuSelected, 0
+                .ENDIF
                 invoke InvalidateRect, hWnd, NULL, FALSE
+            .ELSEIF eax == VK_LEFT || eax == VK_RIGHT
+                .IF MenuSelected == 2
+                    .IF eax == VK_LEFT
+                        dec ColorIndex
+                        .IF sdword ptr ColorIndex < 0
+                            mov ColorIndex, COLOR_COUNT - 1
+                        .ENDIF
+                    .ELSE
+                        inc ColorIndex
+                        .IF ColorIndex >= COLOR_COUNT
+                            mov ColorIndex, 0
+                        .ENDIF
+                    .ENDIF
+                    mov ebx, ColorIndex
+                    mov eax, ColorBodyTable[ebx*4]
+                    mov SnakeBodyColor, eax
+                    mov eax, ColorHeadTable[ebx*4]
+                    mov SnakeHeadColor, eax
+                    invoke InvalidateRect, hWnd, NULL, FALSE
+                .ELSE
+                    .IF eax == VK_LEFT
+                        dec MenuSelected
+                        .IF sdword ptr MenuSelected < 0
+                            mov MenuSelected, 2
+                        .ENDIF
+                    .ELSE
+                        inc MenuSelected
+                        .IF MenuSelected > 2
+                            mov MenuSelected, 0
+                        .ENDIF
+                    .ENDIF
+                    invoke InvalidateRect, hWnd, NULL, FALSE
+                .ENDIF
             .ELSEIF eax == VK_RETURN
-                mov eax, MenuSelected
-                mov GameMode, eax
-                mov GameState, 1
-                invoke InitGame
-                invoke InvalidateRect, hWnd, NULL, FALSE
+                .IF MenuSelected == 0 || MenuSelected == 1
+                    mov eax, MenuSelected
+                    mov GameMode, eax
+                    mov GameState, 1
+                    invoke InitGame
+                    invoke InvalidateRect, hWnd, NULL, FALSE
+                .ENDIF
             .ENDIF
         .ELSEIF GameState == 1 ; Playing State
             .IF eax == VK_UP && LastMoveDirection != 2
@@ -588,6 +642,17 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
                 invoke SetTextColor, hdc, COLOR_SCORE ; White
             .ENDIF
             invoke DrawText, hdc, ADDR strModeWall, -1, ADDR drawRect, DT_CENTER or DT_TOP
+
+            add drawRect.top, 40
+            .IF MenuSelected == 2
+                invoke SetTextColor, hdc, COLOR_RED ; Selected is Red
+            .ELSE
+                invoke SetTextColor, hdc, COLOR_SCORE ; White
+            .ENDIF
+            mov ebx, ColorIndex
+            mov edx, ColorNameTable[ebx*4]
+            invoke wsprintf, ADDR buffer, ADDR strMenuColorLabel, edx
+            invoke DrawText, hdc, ADDR buffer, -1, ADDR drawRect, DT_CENTER or DT_TOP
             
             invoke SelectObject, hdc, hOldFont
             
@@ -661,9 +726,9 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
             invoke DeleteObject, hBrushFood
             
             ; Draw Snake (Head different)
-            invoke CreateSolidBrush, COLOR_SNAKE_BODY
+            invoke CreateSolidBrush, SnakeBodyColor
             mov hBrushBody, eax
-            invoke CreateSolidBrush, COLOR_SNAKE_HEAD
+            invoke CreateSolidBrush, SnakeHeadColor
             mov hBrushHead, eax
             
             mov ecx, SnakeLength
