@@ -6,6 +6,12 @@
 
 A classic Snake game written in x86 Assembly using MASM32 and Win32 APIs. The game includes two play modes, sound effects, background music, and a main menu with a snake color selector.
 
+## Screenshots
+
+![Main menu](screenshots/main%20menu.png)
+![Classic mode](screenshots/classic.png)
+![Boundaried mode](screenshots/boundary.png)
+
 ## Features
 
 - Classic and Boundaried modes
